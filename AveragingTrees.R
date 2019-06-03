@@ -1,4 +1,3 @@
-library(truncreg)
 library(gbm)
 library(neuralnet)
 library(rpart)
@@ -36,7 +35,7 @@ generateOutcome<-function(X,beta){
   Y= X%*%beta + eps
   return(Y)
 }
-n=5000
+n=10000
 alpha=5
 treatStrength=2
 p=20
@@ -52,7 +51,7 @@ t<-X[,(p+p^2+1)]
 plot(X[,1],t)
 plot(t,Y)
 maxT<-max(t)
-NoTreatOutcome<-sum(beta[1:(p+p^2)]*(1/2))
+NoTreatOutcome<-sum(beta[1:p]*(1/2)) + sum(beta[p:p^2]*0.25)
 tseq<-seq(0,maxT,0.01)
 actual_response<-tseq*beta[coef-2]+beta[coef-1]*tseq^2+beta[coef]*tseq^3+NoTreatOutcome
 plot(tseq,actual_response)
@@ -70,7 +69,7 @@ for(i in 1:1000){
   propensities<-(1/(alpha*Xsamp[,1]))
   uncondense<- (-log(tsamp/alpha))/alpha
   Y.star<-Ysamp*uncondense/propensities
-  treemodel<-rpart(Y.star~tsamp,cp=0.002,method='anova')
+  treemodel<-rpart(Y.star~tsamp,cp=0,method='anova')
   preds.tree<-(predict(treemodel,newdata = data.frame(tsamp=tseq)))
   cutoffs<-as.vector(sort(treemodel$splits[,4]))
   predsAvg<-rep(0,length(tseq))
@@ -84,7 +83,7 @@ for(i in 1:1000){
     }
   }
   Y.star<-Ysamp/propensities
-  treemodel<-rpart(Y.star~tsamp,cp=0.002,method='anova')
+  treemodel<-rpart(Y.star~tsamp,cp=0,method='anova')
   preds.tree.unweighted<-(predict(treemodel,newdata = data.frame(tsamp=tseq)))
   avgLossNonWgtd[i]<-mean((actual_response-preds.tree.unweighted)^2)
   avgLossWgtd[i]<-mean((actual_response-preds.tree)^2)

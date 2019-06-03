@@ -1,4 +1,4 @@
-library(truncreg)
+library(nnet)
 library(gbm)
 library(neuralnet)
 library(rpart)
@@ -38,11 +38,11 @@ generateOutcome<-function(X,beta){
 }
 
 
-n=20000
+n=10000
 alpha=5
 treatStrength=3
 p=20
-trtstr=5
+trtstr=3
 sparsity=0.2
 X<-generateData(n,p,alpha = alpha)
 beta<-generateCoefficients(treatStrength,sparsity,X)
@@ -52,14 +52,9 @@ t<-X[,(p+p^2+1)]
 plot(X[,1],t)
 plot(t,Y)
 maxT<-max(t)
-NoTreatOutcome<-sum(beta[1:(p+p^2)]*(1/2))
-actual_response<-t*treatStrength+0.5*treatStrength*t^2+(1/8)*treatStrength*t^3+NoTreatOutcome
-plot(t,actual_response)
-
-
-
-
-
+coef=length(beta)
+NoTreatOutcome<-sum(beta[1:p]*(1/2)) + sum(beta[p:p^2]*0.25)
+actual_response<-t*beta[coef-2]+beta[coef-1]*t^2+beta[coef]*t^3+NoTreatOutcome
 
 propensities<-(1/(alpha*X[,1]))
 uncondense<- (-log(t/alpha))/alpha
@@ -68,9 +63,37 @@ uncondense<- (-log(t/alpha))/alpha
 
 Y.star<-Y*uncondense/propensities
 
-treemodel<-rpart(Y.star~t,cp=0.001)
+treemodel<-rpart(Y.star~t,cp=0.005)
 
 preds.tree<-(predict(treemodel))
 
 
 ggplot()+geom_point(aes(x=t,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")
+
+classes<-treemodel$where
+classpred<-multinom(classes~X[,(1:p)])
+propscores<-as.vector(apply(fitted(classpred), 1, max))
+predsdiscrete=rep(0,length(t))
+for(c in classes){
+  predsdiscrete[classes==c]=sum(Y[classes==c]/propscores[classes==c])/sum((1/propscores)[classes==c])
+}
+
+
+ggplot()+geom_point(aes(x=t,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")+geom_point(aes(x=t,y=predsdiscrete),col="blue")
+
+
+
+lasso.model<-cv.glmnet(X,Y)
+
+condmeanLassoY<-rep(0,length(t))
+
+for(i in 1:length(t)){
+  treatmentvec<-rep(t[i],length(t))
+  Xpred<-cbind(X[,(1:(p+p^2))],treatmentvec)
+  Xpred<-cbind(Xpred,treatmentvec^2)
+  Xpred<-cbind(Xpred,treatmentvec^3)
+  LassoYpred<-predict.cv.glmnet(lasso.model,newx=Xpred)
+  condmeanLassoY[i]<-mean(LassoYpred)
+}
+
+ggplot()+geom_point(aes(x=predsoutcome$t,y=predsoutcome$pred))+geom_point(aes(x=t,y=actual_response),col="red")+geom_point(aes(x=t,y=condmeanLassoY),col="blue")

@@ -1,6 +1,6 @@
 library(np)
 library(np)
-n=50000
+n=20000
 p=20
 X = matrix(rnorm(n * p), n, p)
 eps<-rnorm(n)
@@ -29,7 +29,7 @@ tvals<-seq(-5,5,0.01)
 tseq<-seq(-5,5,0.01)
 actual_response<-beta[coef]*tvals
 
-ggplot()+geom_point(aes(x=tvals$tsamp,y=actual_response),col="red")
+ggplot()+geom_point(aes(x=tseq,y=actual_response),col="red")
 
 
 avgLossWgtdNorm<-rep(0,1000)
