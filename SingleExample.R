@@ -22,7 +22,7 @@ generateData<-function(n,p,alpha){
 
 generateCoefficients<-function(sparsity,X){
   coef<-dim(X)[2]-1
-  beta<-rnorm(coef)
+  beta<-rnorm(coef,mean=5)
   if(sparsity>0){
     indexzero<-sample(1:(coef))[1:floor(sparsity*(coef))]
     beta[indexzero]=0
@@ -40,8 +40,8 @@ generateOutcome<-function(X,beta,t){
 
 num=2000
 vars=30
-a=3
-s=0.3
+a=5
+s=0.05
 Xtrain<-generateData(num,vars,a)
 ttrain<-Xtrain[,dim(Xtrain)[2]]
 beta<-generateCoefficients(s,Xtrain)
