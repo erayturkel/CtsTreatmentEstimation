@@ -58,8 +58,64 @@ for( treat in seq(0,20000,100)){
 }
 
 
+
+PaperResults<-rep(0,length(seq(0,max(t),1)))
+PaperResults[(1000:length(PaperResults))]<-6.3
+
+
 ggplot()+
-  geom_point(aes(x=seq(0,max(t),1),y=predsdiscrete),col="red")+
+  geom_point(aes(x=seq(0,max(t),1),y=PaperResults),col="red")+
   geom_point(aes(x=seq(0,20000,100),y=predsoutcome$pred),col="blue")+
   xlab("t")+ylab("Contributions (thousands)")+
   coord_cartesian(ylim=c(0,30))
+
+
+
+propensities<-conditionalDenseT
+index<-sample(length(y))
+trainindex<-index[1:10000]
+valindex<-index[10001:13000]
+testindex<-index[13001:16265]
+
+
+EstT<-t[trainindex]
+EstY<-y[trainindex]
+EstP<-propensities[trainindex]
+EstFrame<-data.frame(EstY=EstY,EstT=EstT,EstP=EstP,EstTsq=EstT^2,EstPsq=EstP^2,Intr=EstT*EstP)
+
+ValT<-t[valindex]
+ValY<-y[valindex]
+ValP<-propensities[valindex]
+ValFrame<-data.frame(EstY=ValY,EstT=ValT,EstP=ValP,EstTsq=ValT^2,EstPsq=ValP^2,Intr=ValT*ValP)
+MSEmin=10000000
+optlayer=0
+optdecay=0
+for(i in 1:20){
+  for(j in seq(0,0.1,0.01)){
+    modelNNET<-nnet(EstY~EstT+EstP+EstTsq+EstPsq+Intr, data= EstFrame ,size=i, linout=TRUE,maxit=1000,decay=j)
+    MSE<-mean((ValY-predict(modelNNET,newdata = ValFrame))^2)
+    if(MSE<MSEmin){
+      MSEmin=MSE
+      optlayer=i
+      optdecay=j
+    }
+  }
+}
+
+
+
+modelNNET<-nnet(EstY~EstT+EstP+EstTsq+EstPsq+Intr, data= EstFrame ,size=optlayer, linout=TRUE,maxit=1000,decay=optdecay)
+
+
+EstResponseNNET<-data.frame(t=0,est=0)
+for(treat in seq(0,tmax,0.05)){
+  Estindex<-(EstP>0.05&EstP<0.95)
+  EstP<-EstP[Estindex]
+  EstY<-Y[Estindex]
+  EstT<-rep(treat,length(EstP))
+  EstFrame<-data.frame(EstY=EstY,EstT=EstT,EstP=EstP,EstTsq=EstT^2,EstPsq=EstP^2,Intr=EstT*EstP)
+  estResp<-mean(compute(modelNNET,covariate=EstFrame[,2:6])$net.result)
+  EstResponseNNET<-rbind(EstResponseNNET,c(treat,estResp))
+}
+EstResponseNNET<-EstResponseNNET[-1,]
+ResultErrors[rep,]$NNETerror<-mean((trueResponse-EstResponseNNET$est)^2)
