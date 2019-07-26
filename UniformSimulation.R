@@ -1,6 +1,7 @@
 library(nnet)
 library(gbm)
 library(neuralnet)
+library(ggplot2)
 library(rpart)
 generateData<-function(n,p,alpha){
   X = matrix(runif(n * p), n, p)
@@ -55,21 +56,42 @@ maxT<-max(t)
 coef=length(beta)
 NoTreatOutcome<-sum(beta[1:p]*(1/2)) + sum(beta[p:p^2]*0.25)
 actual_response<-t*beta[coef-2]+beta[coef-1]*t^2+beta[coef]*t^3+NoTreatOutcome
-
 propensities<-(1/(alpha*X[,1]))
 uncondense<- (-log(t/alpha))/alpha
-
-
-
 Y.star<-Y*uncondense/propensities
+#Honest trees: half the data is for interval building, half the data is for prediction
+#SINGLE TREE ESTIMATE
+intervalindex<-sample(length(Y.star), length(Y.star)/2, replace = FALSE)
+Yinterval<-Y.star[intervalindex]
+tinterval<-t[intervalindex]
+Ypred<-Y.star[-intervalindex]
+tpred<-t[-intervalindex]
+treemodel<-rpart(Yinterval~tinterval,cp=0.005)
+preds.tree<-(predict(treemodel,newdata = data.frame(Yinterval=Ypred,tinterval=tpred)))
+ggplot()+geom_point(aes(x=tpred,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")
 
-treemodel<-rpart(Y.star~t,cp=0.005)
 
-preds.tree<-(predict(treemodel))
+#FOREST ESTIMATION
+
+for(i in 1:n){
+  intervalindex<-sample(length(Y.star), length(Y.star)/2, replace = FALSE)
+  Yinterval<-Y.star[intervalindex]
+  tinterval<-t[intervalindex]
+  Ypred<-Y.star[-intervalindex]
+  tpred<-t[-intervalindex]
+  treemodel<-rpart(Yinterval~tinterval,cp=0.00001)
+  preds.tree<- preds.tree*(i/(i+1)) + (1/(i+1))*(predict(treemodel,newdata = data.frame(Yinterval=Ypred,tinterval=tpred)))
+  
+}
+
+ggplot()+geom_point(aes(x=tpred,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")
 
 
-ggplot()+geom_point(aes(x=t,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")
 
+
+
+
+#MULTIVALUED TREATMENT "FIX"
 classes<-treemodel$where
 classpred<-multinom(classes~X[,(1:p)])
 propscores<-as.vector(apply(fitted(classpred), 1, max))
@@ -82,11 +104,9 @@ for(c in classes){
 ggplot()+geom_point(aes(x=t,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")+geom_point(aes(x=t,y=predsdiscrete),col="blue")
 
 
-
+#LASSO COMPARISON
 lasso.model<-cv.glmnet(X,Y)
-
 condmeanLassoY<-rep(0,length(t))
-
 for(i in 1:length(t)){
   treatmentvec<-rep(t[i],length(t))
   Xpred<-cbind(X[,(1:(p+p^2))],treatmentvec)
@@ -95,5 +115,4 @@ for(i in 1:length(t)){
   LassoYpred<-predict.cv.glmnet(lasso.model,newx=Xpred)
   condmeanLassoY[i]<-mean(LassoYpred)
 }
-
 ggplot()+geom_point(aes(x=predsoutcome$t,y=predsoutcome$pred))+geom_point(aes(x=t,y=actual_response),col="red")+geom_point(aes(x=t,y=condmeanLassoY),col="blue")

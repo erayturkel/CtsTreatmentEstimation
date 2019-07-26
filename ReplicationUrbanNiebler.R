@@ -73,9 +73,9 @@ ggplot()+
 
 propensities<-conditionalDenseT
 index<-sample(length(y))
-trainindex<-index[1:10000]
-valindex<-index[10001:13000]
-testindex<-index[13001:16265]
+trainindex<-index[1:8000]
+valindex<-index[8001:11000]
+testindex<-index[11001:16265]
 
 
 EstT<-t[trainindex]
@@ -89,33 +89,71 @@ ValP<-propensities[valindex]
 ValFrame<-data.frame(EstY=ValY,EstT=ValT,EstP=ValP,EstTsq=ValT^2,EstPsq=ValP^2,Intr=ValT*ValP)
 MSEmin=10000000
 optlayer=0
-optdecay=0
-for(i in 1:20){
-  for(j in seq(0,0.1,0.01)){
-    modelNNET<-nnet(EstY~EstT+EstP+EstTsq+EstPsq+Intr, data= EstFrame ,size=i, linout=TRUE,maxit=1000,decay=j)
-    MSE<-mean((ValY-predict(modelNNET,newdata = ValFrame))^2)
+optlayer2=0
+for(i in 5:20){
+  for(k in 1:i){
+    modelNNET<-neuralnet(EstY~EstT+EstP+EstTsq+EstPsq+Intr, data= EstFrame, hidden = c(i,k), threshold = 0.2,act.fct='tanh',learningrate=0.0001, algorithm="backprop",stepmax = 1e+05,rep=1,lifesign = 'full',act.fct = 'logistic')
+    MSE<-mean((ValY-compute(modelNNET,ValFrame[,-1])$net.result)^2)
     if(MSE<MSEmin){
       MSEmin=MSE
       optlayer=i
-      optdecay=j
+      optlayer2=j
     }
   }
 }
 
 
 
-modelNNET<-nnet(EstY~EstT+EstP+EstTsq+EstPsq+Intr, data= EstFrame ,size=optlayer, linout=TRUE,maxit=1000,decay=optdecay)
+modelNNET<-neuralnet(EstY~EstT+EstP+EstTsq+EstPsq+Intr, data= EstFrame, hidden = c(optlayer,optlayer2), threshold = 5,learningrate=0.00001, algorithm="backprop",stepmax = 2e+05,rep=1,lifesign = 'full',act.fct = 'logistic',linear.output=TRUE)
 
-
-EstResponseNNET<-data.frame(t=0,est=0)
-for(treat in seq(0,tmax,0.05)){
-  Estindex<-(EstP>0.05&EstP<0.95)
-  EstP<-EstP[Estindex]
-  EstY<-Y[Estindex]
-  EstT<-rep(treat,length(EstP))
-  EstFrame<-data.frame(EstY=EstY,EstT=EstT,EstP=EstP,EstTsq=EstT^2,EstPsq=EstP^2,Intr=EstT*EstP)
-  estResp<-mean(compute(modelNNET,covariate=EstFrame[,2:6])$net.result)
-  EstResponseNNET<-rbind(EstResponseNNET,c(treat,estResp))
+TestT<-t[testindex]
+TestY<-y[testindex]
+TestP<-propensities[testindex]
+Testcov<-cov[testindex,]
+TestFrame<-data.frame(EstY=TestY,EstT=TestT,EstP=TestP,EstTsq=TestT^2,EstPsq=TestP^2,Intr=TestT*TestP)
+predsoutcomeNNET<-data.frame(t=seq(0,20000,100),pred=0)
+for( treat in seq(0,20000,100)){
+  TestP<-fitted(npcdens(exdat=Testcov, eydat=rep(treat,nrow(Testcov)), bws=bws,txdat=cov,tydat=t))
+  TestT<-rep(treat,nrow(Testcov))
+  TestFrame<-data.frame(EstY=TestY,EstT=TestT,EstP=TestP,EstTsq=TestT^2,EstPsq=TestP^2,Intr=TestT*TestP)
+  preds.nnet<-mean(compute(modelNNET,TestFrame[,-1])$net.result)
+  predsoutcomeNNET[predsoutcomeNNET$t==treat,]$pred<-mean(preds.nnet)
 }
-EstResponseNNET<-EstResponseNNET[-1,]
-ResultErrors[rep,]$NNETerror<-mean((trueResponse-EstResponseNNET$est)^2)
+
+
+
+library(gbm)
+
+index<-sample(length(y))
+trainindex<-index[1:10000]
+testindex<-index[10001:16265]
+
+EstT<-t[trainindex]
+EstY<-y[trainindex]
+EstP<-propensities[trainindex]
+EstFrame<-data.frame(EstY=EstY,EstT=EstT,EstP=EstP,EstTsq=EstT^2,EstPsq=EstP^2,Intr=EstT*EstP)
+
+TestT<-t[testindex]
+TestY<-y[testindex]
+TestP<-propensities[testindex]
+Testcov<-cov[testindex,]
+TestFrame<-data.frame(EstY=TestY,EstT=TestT,EstP=TestP,EstTsq=TestT^2,EstPsq=TestP^2,Intr=TestT*TestP)
+predsoutcomeGBM<-data.frame(t=seq(0,20000,100),pred=0)
+
+
+modelGBM<-gbm(EstY~.,data=EstFrame,distribution = "gaussian",n.trees = 15000,interaction.depth = 2,cv.folds = 10)
+besttrees<-gbm.perf(modelGBM,method = "cv")
+predsoutcomeGBM<-data.frame(t=seq(0,20000,100),pred=0)
+for(treat in seq(0,20000,100)){
+  TestP<-fitted(npcdens(exdat=Testcov, eydat=rep(treat,nrow(Testcov)), bws=bws,txdat=cov,tydat=t))
+  TestT<-rep(treat,nrow(Testcov))
+  EstFrame<-data.frame(EstT=TestT,EstP=TestP,EstTsq=TestT^2,EstPsq=TestP^2,Intr=TestT*TestP)
+  estResp<-mean(predict(modelGBM,newdata=EstFrame,num.trees=besttrees))
+  predsoutcomeGBM[predsoutcomeGBM$t==treat,]$pred<-estResp
+}
+
+ggplot()+
+  geom_point(aes(x=seq(0,20000,100),y=predsoutcome$pred,colour="Flexible linear regression"))+
+  geom_point(aes(x=seq(0,20000,100),y=predsoutcomeGBM$pred,colour="GBM"))+
+  xlab("t")+ylab("Contributions (thousands)")
+
