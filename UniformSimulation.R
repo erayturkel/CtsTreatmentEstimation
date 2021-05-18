@@ -61,12 +61,15 @@ uncondense<- (-log(t/alpha))/alpha
 Y.star<-Y*uncondense/propensities
 #Honest trees: half the data is for interval building, half the data is for prediction
 #SINGLE TREE ESTIMATE
+treatgood<-((propensities)<5)&((propensities)>0.05)&(uncondense>0.05)
+Y.star<-Y.star[treatgood]
+tgood<-t[treatgood]
 intervalindex<-sample(length(Y.star), length(Y.star)/2, replace = FALSE)
 Yinterval<-Y.star[intervalindex]
-tinterval<-t[intervalindex]
+tinterval<-tgood[intervalindex]
 Ypred<-Y.star[-intervalindex]
-tpred<-t[-intervalindex]
-treemodel<-rpart(Yinterval~tinterval,cp=0.005)
+tpred<-tgood[-intervalindex]
+treemodel<-rpart(Yinterval~tinterval,cp=0.0000001)
 preds.tree<-(predict(treemodel,newdata = data.frame(Yinterval=Ypred,tinterval=tpred)))
 ggplot()+geom_point(aes(x=tpred,y=preds.tree))+geom_point(aes(x=t,y=actual_response),col="red")
 
